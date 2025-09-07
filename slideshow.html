@@ -1,0 +1,579 @@
+<!-- App to display images in a local folder as a slideshow.
+Layout is made for horizontal screens.
+As much as possible, each slide should contain either:
+- 2 images whose aspect ratios are between 4:5 and 5:4, or
+- 3 vertical images, or
+- 1 horizontal image. -->
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Slideshow</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #000;
+      color: white;
+      overflow: hidden;
+    }
+
+    .controls {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: rgba(0, 0, 0, 0.8);
+      padding: 15px 20px;
+      border-radius: 8px;
+      z-index: 1000;
+      opacity: 1;
+      transition: opacity 0.3s ease;
+    }
+
+    .controls.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .controls button {
+      margin: 0 5px;
+      padding: 8px 16px;
+      border: 1px solid #555;
+      border-radius: 4px;
+      background-color: rgba(255, 255, 255, 0.1);
+      color: white;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+    }
+
+    .controls button:hover {
+      background-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .slide {
+      display: none;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    .slide.active {
+      display: block;
+    }
+
+    .image-grid {
+      width: 100%;
+      height: 100%;
+      display: grid;
+      gap: 2px;
+    }
+
+    .grid-1 {
+      grid-template-columns: 1fr;
+      grid-template-rows: 1fr;
+    }
+
+    .grid-2 {
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr;
+    }
+
+    .grid-3 {
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: 1fr;
+    }
+
+    .image-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background-color: #111;
+      overflow: hidden;
+    }
+
+    .image-container img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .nav-button {
+      background-color: #007bff;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      margin: 0 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+    }
+
+    .nav-button:hover {
+      background-color: #0056b3;
+    }
+
+    .nav-button:disabled {
+      background-color: #555;
+      cursor: not-allowed;
+    }
+
+    .slide-counter {
+      margin: 0 15px;
+      color: #ccc;
+      font-size: 14px;
+    }
+
+    .no-images {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 100vw;
+      height: 100vh;
+      text-align: center;
+      color: #666;
+      font-size: 18px;
+    }
+
+    .nav-arrows {
+      position: fixed;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 999;
+      opacity: 1;
+      transition: opacity 0.3s ease;
+    }
+
+    .nav-arrows.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .nav-arrow {
+      background: rgba(0, 0, 0, 0.7);
+      color: white;
+      border: none;
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      font-size: 20px;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+    }
+
+    .nav-arrow:hover {
+      background: rgba(0, 0, 0, 0.9);
+    }
+
+    .nav-arrow:disabled {
+      background: rgba(0, 0, 0, 0.3);
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+
+    .nav-arrow.left {
+      left: 20px;
+    }
+
+    .nav-arrow.right {
+      right: 20px;
+    }
+
+    .loading {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #ccc;
+      font-size: 16px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="controls" id="controls">
+    <button id="selectFolder">Select Folder</button>
+    <div class="slide-counter" id="slideCounter"></div>
+    <div class="navigation">
+      <button class="nav-button" id="prevButton" disabled>Previous</button>
+      <button class="nav-button" id="nextButton" disabled>Next</button>
+    </div>
+  </div>
+
+  <!-- Side navigation arrows -->
+  <div class="nav-arrows" id="navArrows">
+    <button class="nav-arrow left" id="prevArrow" disabled>‹</button>
+  </div>
+  <div class="nav-arrows">
+    <button class="nav-arrow right" id="nextArrow" disabled>›</button>
+  </div>
+
+  <div id="slideContainer">
+    <div class="no-images">
+      <p>Please select a folder containing images to start the slideshow.</p>
+    </div>
+  </div>
+
+  <script>
+    let images = [];
+    let slides = [];
+    let currentSlide = 0;
+
+    const selectFolderBtn = document.getElementById('selectFolder');
+    const slideContainer = document.getElementById('slideContainer');
+    const prevButton = document.getElementById('prevButton');
+    const nextButton = document.getElementById('nextButton');
+    const prevArrow = document.getElementById('prevArrow');
+    const nextArrow = document.getElementById('nextArrow');
+    const slideCounter = document.getElementById('slideCounter');
+    const controls = document.getElementById('controls');
+    const navArrows = document.querySelectorAll('.nav-arrows');
+
+    // Check if File System Access API is supported
+    if ('showDirectoryPicker' in window) {
+      selectFolderBtn.addEventListener('click', selectFolder);
+    } else {
+      selectFolderBtn.textContent = 'File System Access API not supported';
+      selectFolderBtn.disabled = true;
+    }
+
+    // Navigation event listeners
+    [prevButton, prevArrow].forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (currentSlide > 0) {
+          showSlide(currentSlide - 1);
+        }
+      });
+    });
+
+    [nextButton, nextArrow].forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (currentSlide < slides.length - 1) {
+          showSlide(currentSlide + 1);
+        }
+      });
+    });
+
+    async function selectFolder() {
+      try {
+        const directoryHandle = await window.showDirectoryPicker();
+        await loadImages(directoryHandle);
+      } catch (error) {
+        console.error('Error selecting folder:', error);
+      }
+    }
+
+    async function loadImages(directoryHandle) {
+      // Show loading message
+      slideContainer.innerHTML = '<div class="loading"><p>Loading images and analyzing orientations...</p></div>';
+
+      images = [];
+      const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'];
+
+      for await (const entry of directoryHandle.values()) {
+        if (entry.kind === 'file') {
+          const extension = entry.name.split('.').pop().toLowerCase();
+          if (imageExtensions.includes(extension)) {
+            const file = await entry.getFile();
+            const imageUrl = URL.createObjectURL(file);
+            images.push({
+              name: entry.name,
+              url: imageUrl,
+              file: file
+            });
+          }
+        }
+      }
+
+      if (images.length === 0) {
+        slideContainer.innerHTML = '<div class="no-images"><p>No image files found in the selected folder.</p></div>';
+        updateNavigation();
+        return;
+      }
+
+      // Sort images by name
+      images.sort((a, b) => a.name.localeCompare(b.name));
+
+      // Analyze image orientations
+      await analyzeImageOrientations();
+
+      // Create slides based on orientation logic
+      createSmartSlides();
+      showSlide(0);
+    }
+
+    async function analyzeImageOrientations() {
+      const promises = images.map(image => {
+        return new Promise((resolve) => {
+          const img = new Image();
+          img.onload = () => {
+            const aspectRatio = img.width / img.height;
+
+            // Classify image types
+            if (aspectRatio >= 0.8 && aspectRatio <= 1.25) { // Between 4:5 and 5:4
+              image.type = 'square';
+            } else if (img.height > img.width) {
+              image.type = 'vertical';
+            } else {
+              image.type = 'horizontal';
+            }
+
+            image.isVertical = img.height > img.width;
+            image.width = img.width;
+            image.height = img.height;
+            image.aspectRatio = aspectRatio;
+            resolve();
+          };
+          img.onerror = () => {
+            // Default to horizontal if can't load
+            image.type = 'horizontal';
+            image.isVertical = false;
+            resolve();
+          };
+          img.src = image.url;
+        });
+      });
+
+      await Promise.all(promises);
+    }
+
+    function createSmartSlides() {
+      slides = [];
+      const verticalImages = [];
+      const squareImages = [];
+      const processedIndices = new Set();
+
+      // Collect images by type
+      for (let i = 0; i < images.length; i++) {
+        const image = images[i];
+        if (image.type === 'vertical') {
+          verticalImages.push({ image, originalIndex: i });
+        } else if (image.type === 'square') {
+          squareImages.push({ image, originalIndex: i });
+        } else {
+          // Horizontal image gets its own slide
+          slides.push([image]);
+          processedIndices.add(i);
+        }
+      }
+
+      // Group vertical images in sets of 3
+      const completeVerticalSlides = [];
+      const remainingVerticalImages = [];
+
+      for (let i = 0; i < verticalImages.length; i += 3) {
+        const group = verticalImages.slice(i, i + 3);
+        if (group.length === 3) {
+          completeVerticalSlides.push(group.map(item => item.image));
+        } else {
+          remainingVerticalImages.push(...group.map(item => item.image));
+        }
+      }
+
+      // Group square images in sets of 2
+      const completeSquareSlides = [];
+      const remainingSquareImages = [];
+
+      for (let i = 0; i < squareImages.length; i += 2) {
+        const group = squareImages.slice(i, i + 2);
+        if (group.length === 2) {
+          completeSquareSlides.push(group.map(item => item.image));
+        } else {
+          remainingSquareImages.push(...group.map(item => item.image));
+        }
+      }
+
+      // Build slides maintaining relative order
+      const allSlides = [];
+      let verticalSlideIndex = 0;
+      let squareSlideIndex = 0;
+
+      // Create a mapping of original positions to slide types
+      const slidePositions = [];
+      for (let i = 0; i < images.length; i++) {
+        if (images[i].type === 'vertical') {
+          const verticalIndex = verticalImages.findIndex(v => v.originalIndex === i);
+          const groupIndex = Math.floor(verticalIndex / 3);
+          if (groupIndex < completeVerticalSlides.length) {
+            slidePositions.push({ type: 'vertical', groupIndex, originalIndex: i });
+          } else {
+            slidePositions.push({ type: 'remainingVertical', originalIndex: i });
+          }
+        } else if (images[i].type === 'square') {
+          const squareIndex = squareImages.findIndex(v => v.originalIndex === i);
+          const groupIndex = Math.floor(squareIndex / 2);
+          if (groupIndex < completeSquareSlides.length) {
+            slidePositions.push({ type: 'square', groupIndex, originalIndex: i });
+          } else {
+            slidePositions.push({ type: 'remainingSquare', originalIndex: i });
+          }
+        } else {
+          slidePositions.push({ type: 'horizontal', originalIndex: i });
+        }
+      }
+
+      // Build slides maintaining relative order
+      const processedVerticalGroups = new Set();
+      const processedSquareGroups = new Set();
+
+      for (let i = 0; i < slidePositions.length; i++) {
+        const pos = slidePositions[i];
+
+        if (pos.type === 'horizontal') {
+          allSlides.push([images[pos.originalIndex]]);
+        } else if (pos.type === 'vertical' && !processedVerticalGroups.has(pos.groupIndex)) {
+          allSlides.push(completeVerticalSlides[pos.groupIndex]);
+          processedVerticalGroups.add(pos.groupIndex);
+        } else if (pos.type === 'square' && !processedSquareGroups.has(pos.groupIndex)) {
+          allSlides.push(completeSquareSlides[pos.groupIndex]);
+          processedSquareGroups.add(pos.groupIndex);
+        }
+      }
+
+      // Add remaining images as final slide(s)
+      const allRemainingImages = [...remainingVerticalImages, ...remainingSquareImages];
+      if (allRemainingImages.length > 0) {
+        allSlides.push(allRemainingImages);
+      }
+
+      slides = allSlides;
+      renderSlides();
+    }
+
+    function renderSlides() {
+      slideContainer.innerHTML = '';
+
+      slides.forEach((slideImages, index) => {
+        const slideDiv = document.createElement('div');
+        slideDiv.className = 'slide';
+        slideDiv.id = `slide-${index}`;
+
+        const gridDiv = document.createElement('div');
+        const imageCount = slideImages.length;
+        gridDiv.className = `image-grid grid-${Math.min(imageCount, 3)}`;
+
+        slideImages.forEach(image => {
+          const imageContainer = document.createElement('div');
+          imageContainer.className = 'image-container';
+
+          const img = document.createElement('img');
+          img.src = image.url;
+          img.alt = image.name;
+          img.title = `${image.name} (${image.type}: ${image.width}×${image.height})`;
+
+          imageContainer.appendChild(img);
+          gridDiv.appendChild(imageContainer);
+        });
+
+        slideDiv.appendChild(gridDiv);
+        slideContainer.appendChild(slideDiv);
+      });
+    }
+
+    function showSlide(index) {
+      // Hide all slides
+      const allSlides = document.querySelectorAll('.slide');
+      allSlides.forEach(slide => slide.classList.remove('active'));
+
+      // Show current slide
+      const currentSlideElement = document.getElementById(`slide-${index}`);
+      if (currentSlideElement) {
+        currentSlideElement.classList.add('active');
+      }
+
+      currentSlide = index;
+      updateNavigation();
+      updateCounter();
+    }
+
+    function updateNavigation() {
+      const isDisabledPrev = currentSlide <= 0 || slides.length === 0;
+      const isDisabledNext = currentSlide >= slides.length - 1 || slides.length === 0;
+
+      [prevButton, prevArrow].forEach(btn => {
+        btn.disabled = isDisabledPrev;
+      });
+
+      [nextButton, nextArrow].forEach(btn => {
+        btn.disabled = isDisabledNext;
+      });
+    }
+
+    function updateCounter() {
+      if (slides.length === 0) {
+        slideCounter.textContent = '';
+      } else {
+        const currentSlideImages = slides[currentSlide];
+        const imageTypes = currentSlideImages.map(img => {
+          switch (img.type) {
+            case 'vertical': return 'V';
+            case 'horizontal': return 'H';
+            case 'square': return 'S';
+            default: return '?';
+          }
+        }).join(', ');
+        slideCounter.textContent = `Slide ${currentSlide + 1} of ${slides.length} (${imageTypes})`;
+      }
+    }
+
+    // Keyboard navigation
+    document.addEventListener('keydown', (e) => {
+      if (slides.length === 0) return;
+
+      if (e.key === 'ArrowLeft' && currentSlide > 0) {
+        showSlide(currentSlide - 1);
+      } else if (e.key === 'ArrowRight' && currentSlide < slides.length - 1) {
+        showSlide(currentSlide + 1);
+      } else if (e.key === 'Escape') {
+        // Optional: Exit fullscreen on Escape key
+        if (document.fullscreenElement) {
+          document.exitFullscreen();
+        }
+      }
+    });
+
+    // Auto-hide controls and cursor after inactivity
+    let cursorTimeout;
+    let controlsTimeout;
+
+    function showControlsAndCursor() {
+      // Show controls and cursor
+      document.body.style.cursor = 'default';
+      controls.classList.remove('hidden');
+      navArrows.forEach(arrow => arrow.classList.remove('hidden'));
+
+      // Clear existing timeouts
+      clearTimeout(cursorTimeout);
+      clearTimeout(controlsTimeout);
+
+      // Set timeout for cursor
+      cursorTimeout = setTimeout(() => {
+        if (slides.length > 0) {
+          document.body.style.cursor = 'none';
+        }
+      }, 3000);
+
+      controlsTimeout = setTimeout(() => {
+        if (slides.length > 0) {
+          controls.classList.add('hidden');
+          navArrows.forEach(arrow => arrow.classList.add('hidden'));
+        }
+      }, 3000);
+    }
+
+    document.addEventListener('mousemove', showControlsAndCursor);
+    showControlsAndCursor();
+  </script>
+</body>
+
+</html>
